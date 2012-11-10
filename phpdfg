@@ -1,0 +1,104 @@
+#!/usr/bin/php -q
+<?php
+
+# east london, i'nit?
+$quiet_mode = false;
+$scheduled_dirs = array();
+$skip_patterns = array('/\\.git');
+
+# argument handling
+if(!parse_args($args)) { usage(); }
+
+# get defined functions
+$functions = get_defined_functions();
+$functions = array_shift($functions);
+
+# real work
+$started=0;
+$functions_in_use=array();
+$disused_functions=array();
+foreach($functions as $f) {
+ # see if function is used
+ $in_use = function_in_use($f);
+ if($in_use) {
+  array_push($functions_in_use,$f);
+  if($started) { print ', '; }
+  print $f;
+  $started=1;
+ }
+ else {
+  array_push($disused_functions,$f);
+ }
+}
+print "\n";
+
+print "(Found " . count($functions_in_use) . " functions in use.)\n";
+print "Disused functions: " . count($disused_functions) . "\n";
+
+print "disable_functions = " . join(',',$disused_functions) . "\n";
+exit(0);
+
+function function_in_use($f) {
+ global $scheduled_dirs;
+ global $skip_patterns;
+ foreach($scheduled_dirs as $dir) {
+  # grep -R
+  $cmd = 'grep -R ' . escapeshellarg($f.'(') . ' ' . escapeshellarg($dir);
+  #print "[ running: $cmd ]\n";
+  #$result = `$cmd`;
+  #print " [ backtick got: $result ]\n";
+  $result = exec($cmd);
+  if($result!='') { return true; }
+  #print " [ exec got: $result ]\n";
+ }
+ return false;
+}
+
+function parse_args() {
+ global $argv;
+ global $quiet_mode;
+ $seen_path=false;
+ for($i=1;$i<count($argv);$i++) {
+  if(!$seen_path) {
+   if($argv[$i]=='-q') {
+    $quiet_mode = true;
+   }
+   else { 
+    parse_args_dir_helper($argv[$i]);
+    $seen_path=1;
+   }
+  }
+  else { 
+   parse_args_dir_helper($argv[$i]);
+   $seen_path=1;
+  }
+ }
+ # check we got something
+ global $scheduled_dirs;
+ if(!count($scheduled_dirs)) { fatal_error("No directories specified!",1); }
+ return true;
+}
+
+function parse_args_dir_helper($dir) {
+ if(!file_exists($dir))     { fatal_error("'$dir' does not exist."); }
+ elseif(!is_dir($dir))      { fatal_error("'$dir' is not a directory."); }
+ elseif(!is_readable($dir)) { fatal_error("'$dir' is not readable."); }
+ global $scheduled_dirs;
+ array_push($scheduled_dirs,$dir);
+}
+
+function fatal_error($string,$show_usage=false) {
+ print "ERROR: $string\n";
+ if($show_usage) { usage(); }
+ exit(1);
+}
+
+function usage() {
+ global $argv;
+ print "usage: " . $argv[0] . " [-q] <path> [<path2> ...] |tail -n 1 >>my-dfg-line\n";
+ print " [-q]   Enable quiet mode.\n";
+ print " <path> Specify path to source code tree.\n";
+ exit(1);
+}
+
+?>
